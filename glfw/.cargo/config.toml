@@ -1,0 +1,2 @@
+[build]
+rustflags = "-L C:\\Stuff\\glfw-3.3.6.bin.WIN64\\lib-vc2022"

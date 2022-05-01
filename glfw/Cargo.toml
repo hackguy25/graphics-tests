@@ -1,0 +1,10 @@
+[package]
+name = "graphics-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[dependencies.glfw]
+version = "0.44.0"
+default-features = false
