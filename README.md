@@ -9,7 +9,8 @@ A collection of programs using the [`pixels`](https://lib.rs/crates/pixels) 2D f
 
 Modules `cgfs_raytracing`, `cgfs_rasterization` and `cgfs_scene` contain code described in the book [Computer Graphics from Scratch](https://gabrielgambetta.com/computer-graphics-from-scratch/).
 The code follows the examples in book mostly faithfully, although there are some tweaks here and there, either due to programming language differences or simply as performance improvements.
-Module `cgfs_raytracing` corresponds to chapters 2 through 5, `cgfs_rasterization` to chapters 6 through 9, and finally `cgfs_scene` to chapters 10 through 15.
+Module `cgfs_raytracing` corresponds to chapters 2 through 4, `cgfs_rasterization` to chapters 6 through 9, and finally `cgfs_scene` to chapters 10 through 12.
+Due to the complexity of the final rasterizer I've decided not to implement shading and textures.
 
 ### Mandelbrot set
 
