@@ -20,3 +20,8 @@ Module `mandel` contains code used to generate and display the [Mandelbrot set](
 
 A simple example using the [`glfw`](https://lib.rs/crates/glfw) library.
 A work in progress with no real goal.
+
+## `rainbow-smoke`
+
+An implementation of the rainbow smoke algorithm, as presented in the accepted answer of the question [Images with all colors](https://codegolf.stackexchange.com/questions/22144/images-with-all-colors).
+Uses `pixels` library as a base, iteratively updates the canvas.
