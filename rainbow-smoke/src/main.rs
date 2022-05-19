@@ -2,6 +2,7 @@ use pixels::{Pixels, SurfaceTexture};
 use rand::prelude::*;
 use rayon::prelude::*;
 // use std::ops::Index;
+use std::collections::HashSet;
 use std::time::Instant;
 use winit::{
     dpi::LogicalSize,
@@ -12,14 +13,17 @@ use winit::{
 };
 use winit_input_helper::WinitInputHelper;
 
-const WIDTH: usize = 256;
-const HEIGHT: usize = 128;
+const WIDTH: usize = 500;
+const HEIGHT: usize = 500;
 const START_X: i32 = WIDTH as i32 / 2;
 const START_Y: i32 = HEIGHT as i32 / 2;
-const BITS_PER_CHANNEL: u8 = 5;
+const BITS_PER_CHANNEL: u8 = 6;
 const COLORS_PER_CHANNEL: u8 = 1 << BITS_PER_CHANNEL;
 const AVERAGE: bool = true;
-const _: () = assert!(WIDTH * HEIGHT == 1 << (3 * BITS_PER_CHANNEL), "number of pixels must match number of colors!");
+// const _: () = assert!(
+//     WIDTH * HEIGHT == 1 << (3 * BITS_PER_CHANNEL),
+//     "number of pixels must match number of colors!"
+// );
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct Point {
@@ -28,24 +32,38 @@ struct Point {
 }
 
 impl Point {
-    fn get_neighbors(&self) -> Vec<Point> {
-        let mut ret = vec![];
-        ret.reserve(8);
-        for dy in -1..=1 {
-            if self.y + dy < 0 || self.y + dy >= HEIGHT as i32 {
-                continue;
-            }
-            for dx in -1..=1 {
-                if self.x + dx < 0 || self.x + dx >= WIDTH as i32 {
-                    continue;
-                }
-                ret.push(Point {
-                    x: self.x + dx,
-                    y: self.y + dy,
-                });
-            }
+    fn get_neighbors(&self) -> PointNeighbors {
+        PointNeighbors {
+            p: self.clone(),
+            dx: if self.x == 0 { 0 } else { -1 },
+            dy: if self.y == 0 { 0 } else { -1 },
         }
-        ret
+    }
+}
+
+struct PointNeighbors {
+    p: Point,
+    dx: i32,
+    dy: i32,
+}
+
+impl Iterator for PointNeighbors {
+    type Item = Point;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.dx > 1 || self.p.x + self.dx >= WIDTH as i32 {
+            self.dy += 1;
+            self.dx = if self.p.x == 0 { 0 } else { -1 };
+        }
+        if self.dy > 1 || self.p.y + self.dy >= HEIGHT as i32 {
+            None
+        } else {
+            let pdx = self.dx;
+            self.dx += 1;
+            Some(Point {
+                x: self.p.x + pdx,
+                y: self.p.y + self.dy,
+            })
+        }
     }
 }
 
@@ -93,7 +111,7 @@ impl Color {
     }
 }
 
-fn calc_diff(pixels: &[u8], xy: &Point, c: &Color) -> i32 {
+fn calc_diff(pixels: &[u8], xy: &Point, c: &Color, average: bool) -> i32 {
     let mut diffs = vec![];
     diffs.reserve(8);
     for nxy in xy.get_neighbors() {
@@ -103,7 +121,7 @@ fn calc_diff(pixels: &[u8], xy: &Point, c: &Color) -> i32 {
         }
     }
 
-    if AVERAGE {
+    if average {
         let len = diffs.len() as i32;
         if len == 0 {
             0
@@ -117,7 +135,8 @@ fn calc_diff(pixels: &[u8], xy: &Point, c: &Color) -> i32 {
 
 struct RainbowSmoke {
     colors: Vec<Color>,
-    available: std::collections::HashSet<Point>,
+    available: HashSet<Point>,
+    average: bool,
 }
 
 impl RainbowSmoke {
@@ -138,7 +157,7 @@ impl RainbowSmoke {
             }
         }
         colors.shuffle(&mut rand::thread_rng());
-        let mut available = std::collections::HashSet::new();
+        let mut available = HashSet::new();
         available.insert(Point {
             x: START_X,
             y: START_Y,
@@ -159,22 +178,27 @@ impl RainbowSmoke {
             x: WIDTH as i32 - 1,
             y: 0,
         });
-        RainbowSmoke { colors, available }
+        RainbowSmoke { colors, available, average: false }
+    }
+
+    fn from(colors: Vec<Color>, available: HashSet<Point>) -> RainbowSmoke {
+        RainbowSmoke { colors, available, average: false }
     }
 
     fn next_pixel(&mut self, pixels: &mut [u8]) -> bool {
         if let Some(c) = self.colors.pop() {
             if let Some(best_xy) = self
-            .available
-            .par_iter()
-            .map(|p| (p, calc_diff(pixels, p, &c)))
-            .min_by(|(_, a), (_, b)| a.cmp(b))
-            .map(|(a, _)| a.clone()) {
+                .available
+                .par_iter()
+                .map(|p| (p, calc_diff(pixels, p, &c, self.average)))
+                .min_by(|(_, a), (_, b)| a.cmp(b))
+                .map(|(a, _)| a.clone())
+            {
                 c.fill_point(pixels, &best_xy);
                 self.available.remove(&best_xy);
                 for nxy in best_xy.get_neighbors() {
                     match Color::from_pixel(pixels, &nxy) {
-                        Some(_) => {},
+                        Some(_) => {}
                         None => {
                             self.available.insert(nxy);
                         }
@@ -194,6 +218,7 @@ fn main() {
     // main event loop and inpu helper
     let event_loop = EventLoop::new();
     let mut input = WinitInputHelper::new();
+
     // window that contains the framebuffer
     let window = {
         let size = LogicalSize::new(WIDTH as u32, HEIGHT as u32);
@@ -205,16 +230,43 @@ fn main() {
             .build(&event_loop)
             .unwrap()
     };
+
     // framebuffer
     let mut pixels = {
         let window_size = window.inner_size();
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
         Pixels::new(WIDTH as u32, HEIGHT as u32, surface_texture).unwrap()
     };
+
     // frame timer
     let mut prev_time = Instant::now();
+
+    // load image
+    let img = image::io::Reader::open("avatar_1k.jpg")
+        .unwrap()
+        .decode()
+        .unwrap()
+        .into_rgb8()
+        .into_vec();
+    let mut img = img
+        .chunks(3)
+        .map(|c| Color {
+            r: c[0],
+            g: c[1],
+            b: c[2],
+        })
+        .collect::<Vec<_>>();
+    img.shuffle(&mut rand::thread_rng());
+
     // rainbow smoke generator
-    let mut rainbow_smoke = RainbowSmoke::new();
+    let mut rainbow_smoke = RainbowSmoke::from(
+        img,
+        HashSet::from([Point {
+            x: WIDTH as i32 / 2,
+            y: HEIGHT as i32 / 2,
+        }]),
+    );
+    rainbow_smoke.average = AVERAGE;
     pixels.get_frame().fill(0x0);
 
     event_loop.run(move |event, _, control_flow| {
@@ -253,6 +305,9 @@ fn main() {
             if input.key_pressed(VirtualKeyCode::Escape) || input.quit() {
                 *control_flow = ControlFlow::Exit;
                 return;
+            }
+            if input.key_pressed(VirtualKeyCode::Return) {
+                rainbow_smoke.average = !rainbow_smoke.average;
             }
             if let Some(size) = input.window_resized() {
                 pixels.resize_surface(size.width, size.height);
